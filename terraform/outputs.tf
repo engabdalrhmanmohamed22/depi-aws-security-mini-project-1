@@ -39,3 +39,27 @@ output "private_subnet_ids" {
 
 # The rest of outputs.tf (ALB DNS name, CloudFront URL, RDS endpoint...)
 # is filled in as later tasks are completed.
+
+# ---------------------------------------------------------------------------
+# Task 5 outputs
+# ---------------------------------------------------------------------------
+
+output "alb_sg_id" {
+  description = "Security group for the ALB (Task 12)"
+  value       = aws_security_group.alb.id
+}
+
+output "app_sg_id" {
+  description = "Security group for the EC2 app servers (Task 8)"
+  value       = aws_security_group.app.id
+}
+
+output "db_sg_id" {
+  description = "Security group for RDS (Task 11)"
+  value       = aws_security_group.db.id
+}
+
+output "efs_sg_id" {
+  description = "Security group for EFS mount targets (Task 9)"
+  value       = aws_security_group.efs.id
+}

@@ -37,7 +37,7 @@ number, a symbol, and forced rotation every 90 days.
 - [x] Task 2 — Budget & Budget Action
 - [x] Task 3 — IAM users, groups, roles
 - [x] Task 4 — VPC, subnets, routing
-- [ ] Task 5 — Security Groups
+- [x] Task 5 — Security Groups
 - [ ] Task 6 — NACLs
 - [ ] Task 7 — VPC Endpoints
 - [ ] Task 8 — EC2 + Session Manager
