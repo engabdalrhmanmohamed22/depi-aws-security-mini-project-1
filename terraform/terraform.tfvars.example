@@ -1,0 +1,5 @@
+# Copy this file to terraform.tfvars and fill in your own values.
+# terraform.tfvars is git-ignored and must never be committed.
+
+alert_email = "your-email@example.com"
+owner_name  = "your-name"
