@@ -6,4 +6,4 @@
 *.tfvars.json
 crash.log
 override.tf
-override.tf.json
+override.tf.json*.zip
