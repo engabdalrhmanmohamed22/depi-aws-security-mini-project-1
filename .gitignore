@@ -1,4 +1,4 @@
-﻿.terraform/
+.terraform/
 *.tfstate
 *.tfstate.*
 *.backup
@@ -6,4 +6,5 @@
 *.tfvars.json
 crash.log
 override.tf
-override.tf.json*.zip
+override.tf.json
+*.zip
