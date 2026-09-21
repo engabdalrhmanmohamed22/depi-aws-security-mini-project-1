@@ -1,10 +1,27 @@
 # Security Controls
 
-One row per control. Filled in progressively as each task is completed.
+One row per control, covering every task in the project.
 
-| Control | AWS Service | Threat it stops | Screenshot |
-|---|---|---|---|
-| Tiered Security Groups (chain below) | EC2 Security Groups | Direct internet access to app servers, database, and file system | `screenshots/05-sg/` |
+| # | Control | AWS Service | Threat it stops | Screenshot |
+|---|---|---|---|---|
+| 2 | Budget with automatic deny action at 90% | AWS Budgets + IAM | A stolen credential launching expensive resources unnoticed | `screenshots/02-budget/02-a-budget-overview.png`, `02-b-budget-action.png` |
+| 3 | Password policy, least-privilege group/user/role | IAM | Weak passwords; users or servers with more access than they need | `screenshots/03-iam/03-a-ec2-role-trust-policy.png`, `03-b-s3-app-read-policy.png`, `03-c-dev1-user-group-only.png` |
+| 4 | Public/private subnet split via route tables | VPC | Servers being reachable from the internet by default | `screenshots/04-vpc/04-a-public-route-table.png`, `04-b-private-route-table.png`, `04-c-resource-map.png` |
+| 5 | Tiered Security Groups (chain below) | EC2 Security Groups | Direct internet access to app servers, database, and file system | `screenshots/05-sg/05-a-alb-sg-inbound.png` … `05-d-efs-sg-inbound.png` |
+| 6 | Network ACLs (stateless subnet-level backstop) | VPC NACL | Port 22 reachable even if a Security Group were ever misconfigured | `screenshots/06-nacl/06-a-nacl-inbound-rules.png`, `06-b-nacl-outbound-rules.png` |
+| 7 | VPC Endpoints (S3 gateway + SSM/SSMMESSAGES/EC2MESSAGES interface) | VPC PrivateLink | Needing a NAT Gateway or public IP just to reach AWS services | `screenshots/07-endpoints/07-a-endpoints-list.png`, `07-b-private-route-table-updated.png` |
+| 8 | EC2 with no key pair, no public IP, SSM-only access | EC2 + Systems Manager | Standing SSH access / a leaked key granting a shell | `screenshots/08-ec2-ssm/08-a-session-manager-shell.png`, `08-b-no-public-ip.png` |
+| 9 | EBS + EFS encryption at rest | KMS (AWS-managed) | Data readable if the underlying disk were ever exposed | `screenshots/09-efs/09-a-efs-shared-file.png`, `09-b-encrypted-volumes.png` |
+| 10 | S3 Public Access Block, versioning, encryption, HTTPS-only policy | S3 | A bucket or object ever becoming reachable from the internet | `screenshots/10-s3/10-a-public-access-block.png`, `10-b-public-access-refused.png` |
+| 11 | Private RDS, encrypted, no public IP, isolated Security Group | RDS | Database reachable from outside the app tier | `screenshots/11-rds/11-a-rds-connectivity.png`, `11-b-connection-success-from-inside.png` |
+| 12 | ALB fronting private app servers, health checks | Elastic Load Balancing | App servers needing a public IP to be reachable at all | `screenshots/12-alb/12-a-healthy-targets.png`, `12-b-unhealthy-target.png`, `12-c-working-page.png` |
+| 13 | CloudFront + secret origin header + ALB default-deny listener | CloudFront + ELB | Bypassing the CDN/WAF layer by hitting the ALB directly | `screenshots/13-cloudfront/13-a-cloudfront-https-works.png`, `13-b-alb-direct-403.png` |
+| 14 | CloudTrail, multi-Region, log file validation, S3 data events | CloudTrail | No record of who did what, or tampered evidence after the fact | `screenshots/14-cloudtrail/14-a-trail-settings.png`, `14-b-event-with-identity.png` |
+| 15 | VPC Flow Logs (ALL traffic, CloudWatch Logs) | VPC Flow Logs | No visibility into what crossed the network, accepted or rejected | `screenshots/15-flowlogs/15-a-reject-record.png` |
+| 16 | CloudWatch alarms (CPU, ALB health, RDS storage, failed logins) + dashboard | CloudWatch + SNS | Problems or brute-force attempts going unnoticed until too late | `screenshots/16-cloudwatch/16-a-dashboard.png`, `16-b-alarm-in-alarm-state.png`, `16-c-alert-email.png` |
+| 17 | Lambda auto-remediation of open SSH/RDP rules | Lambda + EventBridge | A dangerous rule staying open for minutes/hours until a human reacts | `screenshots/17-lambda/17-a-rule-added.png`, `17-b-rule-removed.png`, `17-c-lambda-logs.png` |
+| 18 | VPC peering with least-privilege rules for the monitoring subnet only | VPC Peering | A second trust boundary (ops/monitoring) needing full network access to reach the app | `screenshots/18-peering/18-a-peering-routes.png`, `18-b-successful-curl.png` |
+| 19 | Daily AWS Backup plan, tag-based selection | AWS Backup | Data loss with no recent recovery point | `screenshots/19-backup/19-a-vault-created.png`, `19-b-backup-plan.png`, `19-c-completed-job.png` |
 
 ## Security Group chain (Task 5)
 
