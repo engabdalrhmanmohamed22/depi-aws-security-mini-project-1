@@ -100,8 +100,12 @@ platform was destroyed at the end of every work session per the project's own gu
 ("run `terraform destroy` when you stop working") to avoid paying for idle infrastructure overnight.
 
 ### Real cost paid
-**[Fill in after checking Billing → Cost Explorer, ~24 hours after the final `terraform destroy`]:**
-Total cost for the project period: **$_____**.
+Checked via Billing → Cost Explorer for September 2026 (the month the project was built and torn
+down in): **Accrued (actual) cost: $0.00**. Cost Explorer's forecast column showed $12.59, but that
+figure projects the month's usage forward as if it continued at the same rate — it does not reflect
+reality here, since the infrastructure was destroyed (`terraform destroy`) well before the month
+ended and nothing kept running. The $0.00 accrued figure, together with the account's promotional
+credit balance, confirms the project stayed within Free Tier / credits for its entire lifetime.
 
 ## 10. How to destroy
 ```bash
