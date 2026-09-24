@@ -1,3 +1,5 @@
+![Architecture diagram](architecture.png)
+
 # Architecture
 
 ## Diagram

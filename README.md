@@ -12,7 +12,12 @@ servers are reached only through AWS Systems Manager Session Manager, with no SS
 second, peered VPC hosts a monitoring instance representing a separate operational trust boundary.
 
 ## 2. Architecture diagram
-See [`docs/architecture.md`](docs/architecture.md).
+
+![Architecture diagram](docs/architecture.png)
+
+Users reach the platform through CloudFront, which forwards to the Application Load Balancer in the public subnets. The EC2 servers, RDS and EFS live in private subnets with no public IP and no SSH key. Access is by Session Manager through VPC endpoints.
+
+Full explanation: [docs/architecture.md](docs/architecture.md)
 
 ## 3. Network design table
 
