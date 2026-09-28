@@ -84,20 +84,25 @@ resource "aws_backup_selection" "by_project_tag" {
 }
 
 # ---------------------------------------------------------------------------
-# NOTE ON VAULT LOCK — INTENTIONALLY NOT ENABLED
+# Vault Lock — GOVERNANCE mode. Governance vs. compliance mode is controlled
+# by whether changeable_for_days is set on PutBackupVaultLockConfiguration:
+#   - changeable_for_days SET   -> compliance mode. Editable during that
+#     grace window only; once it elapses the lock is permanent and cannot be
+#     removed by anyone, including the root user or AWS Support.
+#   - changeable_for_days OMITTED -> governance mode. The lock is permanent
+#     immediately, but a principal with the backup:BypassGovernanceRetention
+#     permission can still delete a recovery point or remove the lock.
 #
-# AWS Backup Vault Lock does not offer a persistent "governance mode" the
-# way S3 Object Lock does. Every vault lock is effectively a compliance
-# lock: it has an editable grace period (changeable_for_days, max 3 days),
-# but once that grace period ends the lock becomes permanent and cannot be
-# removed by anyone — not even the root user or AWS Support.
-#
-# The project brief explicitly warns: "Never use compliance mode in a
-# learning account... Compliance mode cannot be removed by anybody, including
-# AWS Support, until the lock expires." Since Backup Vault Lock has no other
-# mode, applying aws_backup_vault_lock_configuration here would permanently
-# lock this lab vault once the grace period passed — a real risk if the
-# apply is left unattended past 3 days. This resource is deliberately left
-# out. The vault, plan, and selection below still fully satisfy the rest of
-# Task 19 (daily backups, 30-day retention, resources selected by tag).
+# An earlier version of this file omitted vault locking entirely based on a
+# mistaken assumption that Backup Vault Lock had no true governance mode.
+# That was wrong: simply never setting changeable_for_days IS governance
+# mode. The lock below is governance mode, matching the project brief
+# exactly, and still allows `terraform destroy` to succeed for an account
+# admin, since the root/admin identity retains bypass permission by default.
 # ---------------------------------------------------------------------------
+resource "aws_backup_vault_lock_configuration" "main" {
+  backup_vault_name  = aws_backup_vault.main.name
+  min_retention_days = 7
+  max_retention_days = 365
+  # changeable_for_days intentionally omitted -> governance mode.
+}

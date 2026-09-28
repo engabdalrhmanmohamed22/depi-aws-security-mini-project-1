@@ -13,11 +13,50 @@ second, peered VPC hosts a monitoring instance representing a separate operation
 
 ## 2. Architecture diagram
 
-![Architecture diagram](docs/architecture.png)
+```
+                                    INTERNET
+                                        │
+                                        │ HTTPS (443)
+                                        ▼
+                              ┌───────────────────┐
+                              │    CloudFront      │  adds secret header
+                              │  (edge, global)    │  X-Origin-Verify
+                              └─────────┬──────────┘
+                                        │ HTTP (80) + header
+                                        ▼
+        ═══════════════════════ depi-sec-app-vpc (10.0.0.0/16) ═══════════════════════
+        ║   PUBLIC SUBNETS (route to Internet Gateway)                              ║
+        ║   ┌─────────────────────┐        ┌─────────────────────┐                  ║
+        ║   │ public-a (10.0.1.0)  │        │ public-b (10.0.2.0)  │  us-east-1a/b   ║
+        ║   │   Application Load Balancer (both AZs)                 │              ║
+        ║   └──────────┬───────────┘        └──────────┬───────────┘                ║
+        ║              │ listener rule: forward only if header matches              ║
+        ║   ───────────┼──────────────────────────────┼───────────────────────────  ║
+        ║   PRIVATE SUBNETS (no route to internet)                                  ║
+        ║              ▼                              ▼                            ║
+        ║   ┌─────────────────────┐        ┌─────────────────────┐                  ║
+        ║   │ private-a: EC2 app-a │        │ private-b: EC2 app-b │                  ║
+        ║   └──────────┬───────────┘        └──────────┬───────────┘                ║
+        ║              │  mount -t nfs4                │  mount -t nfs4             ║
+        ║              ▼                                ▼                           ║
+        ║        EFS (shared /app-data, encrypted)  ── mysql :3306 ──►  RDS MySQL   ║
+        ║                                                                            ║
+        ║   VPC Endpoints (private subnets): S3 (gateway), SSM/SSMMESSAGES/         ║
+        ║   EC2MESSAGES (interface) — management traffic never leaves the VPC       ║
+        ║                                                             │ Peering     ║
+        ═══════════════════════════════════════════════════════════════│════════════
+        ═══════════════════════ depi-sec-tools-vpc (10.1.0.0/16) ══════│════════════
+        ║   tools-a (10.1.1.0): EC2 monitor — curls app servers over ──┘            ║
+        ║   the peering connection (own SSM endpoints, own S3 gateway endpoint)     ║
+        ═══════════════════════════════════════════════════════════════════════════
 
-Users reach the platform through CloudFront, which forwards to the Application Load Balancer in the public subnets. The EC2 servers, RDS and EFS live in private subnets with no public IP and no SSH key. Access is by Session Manager through VPC endpoints.
+Account-wide (not tied to one VPC): IAM · Budget + deny-expensive action · CloudTrail
+(multi-Region) · VPC Flow Logs · CloudWatch alarms + dashboard · SNS alerts · Lambda
+auto-remediation (EventBridge-triggered) · AWS Backup (governance-mode Vault Lock)
+```
 
-Full explanation: [docs/architecture.md](docs/architecture.md)
+Full route tables, the traffic-path breakdown, and **why each resource sits where it
+sits** are in [`docs/architecture.md`](docs/architecture.md).
 
 ## 3. Network design table
 
@@ -33,7 +72,31 @@ Full route tables, the traffic-path diagram, and the reasoning behind each place
 [`docs/architecture.md`](docs/architecture.md).
 
 ## 4. Security controls table
-See [`docs/security-controls.md`](docs/security-controls.md).
+
+| # | Control | AWS Service | Threat it stops |
+|---|---|---|---|
+| 2 | Budget with automatic deny action at 90% | AWS Budgets + IAM | A stolen credential launching expensive resources unnoticed |
+| 3 | Password policy, least-privilege group/user/role | IAM | Weak passwords; users or servers with more access than they need |
+| 4 | Public/private subnet split via route tables | VPC | Servers being reachable from the internet by default |
+| 5 | Tiered Security Groups (ALB → app → db/efs, each referencing the group above it) | EC2 Security Groups | Direct internet access to app servers, database, and file system |
+| 6 | Network ACLs (stateless subnet-level backstop) | VPC NACL | Port 22 reachable even if a Security Group were ever misconfigured |
+| 7 | VPC Endpoints (S3 gateway + SSM/SSMMESSAGES/EC2MESSAGES interface, no NAT Gateway) | VPC PrivateLink | Needing a NAT Gateway or public IP just to reach AWS services |
+| 8 | EC2 with no key pair, no public IP, SSM-only access | EC2 + Systems Manager | Standing SSH access / a leaked key granting a shell |
+| 9 | EBS + EFS encryption at rest | KMS (AWS-managed) | Data readable if the underlying disk were ever exposed |
+| 10 | S3 Public Access Block, versioning, encryption, HTTPS-only policy | S3 | A bucket or object ever becoming reachable from the internet |
+| 11 | Private RDS, encrypted, no public IP, isolated Security Group | RDS | Database reachable from outside the app tier |
+| 12 | ALB fronting private app servers, health checks | Elastic Load Balancing | App servers needing a public IP to be reachable at all |
+| 13 | CloudFront + secret origin header + ALB default-deny listener | CloudFront + ELB | Bypassing the CDN by hitting the ALB directly |
+| 14 | CloudTrail, multi-Region, log file validation, S3 data events | CloudTrail | No record of who did what, or tampered evidence after the fact |
+| 15 | VPC Flow Logs (ALL traffic, CloudWatch Logs) | VPC Flow Logs | No visibility into what crossed the network, accepted or rejected |
+| 16 | CloudWatch alarms (CPU, ALB health, RDS storage, failed logins) + dashboard | CloudWatch + SNS | Problems or brute-force attempts going unnoticed until too late |
+| 17 | Lambda auto-remediation of open SSH/RDP rules | Lambda + EventBridge | A dangerous rule staying open for minutes/hours until a human reacts |
+| 18 | VPC peering with least-privilege rules scoped to the monitoring subnet only | VPC Peering | A second trust boundary needing full network access to reach the app |
+| 19 | Daily AWS Backup plan, tag-based selection, Vault Lock (governance mode) | AWS Backup | Data loss with no recent recovery point; an attacker deleting backups before destroying data |
+
+Full detail, screenshot references, and design-decision notes (the Security Group chain diagram,
+Security Group vs NACL, the Vault Lock governance-mode fix, and the NACL widening for Gateway
+Endpoint traffic) are in [`docs/security-controls.md`](docs/security-controls.md).
 
 ### Identity table (Task 3)
 
@@ -64,24 +127,50 @@ alert_email = "your-email@example.com"
 
 ## 7. How to verify
 
-Full detail, screenshots, and notes on two deliberate deviations are in
-[`docs/testing.md`](docs/testing.md). Summary:
+Full detail and screenshots are in [`docs/testing.md`](docs/testing.md). Summary:
 
 | # | Test | Result |
 |---|---|---|
 | 1 | ALB opened directly | ✅ 403 Forbidden |
 | 2 | CloudFront URL opened | ✅ HTTPS, page loads |
 | 3 | SSH to a private IP | ✅ Blocked, REJECT logged |
-| 4 | RDS from outside the VPC | ✅ No network path (validated via Test 5) |
+| 4 | RDS from a laptop outside AWS | ⚠️ Requires a real attempt with `nc`/`Test-NetConnection` from an actual laptop — see `docs/testing.md` |
 | 5 | RDS from an app server | ✅ Connects |
 | 6 | Make an S3 object public | ✅ Refused |
 | 7 | Open SSH 0.0.0.0/0 on a Security Group | ✅ Auto-revoked by Lambda |
 | 8 | Stop the web server on one app instance | ✅ Site stays up, alarm fires |
 | 9 | Curl an app server from the tools VPC | ✅ Succeeds over peering |
-| 10 | Delete a recovery point in a locked vault | ⚠️ Vault lock deliberately not enabled — see note below |
+| 10 | Delete a recovery point in the governance-locked vault | ⚠️ Requires capturing the Access Denied screenshot after re-applying the corrected Vault Lock — see `docs/testing.md` |
 
 ## 8. Screenshots
+
 Grouped under [`screenshots/`](screenshots/) by task number.
+
+| Task | Screenshot | Shows |
+|---|---|---|
+| 2 | `02-budget/budget-overview.png`, `budget-action.png` | Monthly $10 budget; the 80/90/100% thresholds and deny action |
+| 3 | `03-iam/ec2-role-trust-policy.png` | EC2 role trust policy (only `ec2.amazonaws.com` can assume it) |
+| 3 | `03-iam/s3-app-read-policy.png` | Custom policy JSON scoped to one bucket |
+| 3 | `03-iam/dev1-user-group-only.png` | `depi-dev-1` with zero direct policies |
+| 4 | `04-vpc/public-route-table.png` | Public route table (`0.0.0.0/0 → IGW`) |
+| 4 | `04-vpc/private-route-table.png` | Private route table (local route only) |
+| 4 | `04-vpc/resource-map.png` | Resource map of the 4 subnets across 2 AZs |
+| 5 | `05-sg/alb-sg-inbound.png`, `app-sg-inbound.png`, `db-sg-inbound.png`, `efs-sg-inbound.png` | Each Security Group's inbound rules |
+| 6 | `06-nacl/nacl-inbound-rules.png`, `nacl-outbound-rules.png` | NACL rule list |
+| 7 | `07-endpoints/endpoints-list.png`, `private-route-table-updated.png` | VPC endpoints and the resulting route |
+| 8 | `08-ec2-ssm/session-manager-shell.png`, `no-public-ip.png`, `ssm-connect.png` | SSM shell access, empty public-IP field, connect screen |
+| 9 | `09-efs/efs-shared-file.png`, `efs-shared-file-test.png`, `encrypted-volume-1.png`, `encrypted-volume-2.png` | Shared file visible from both servers; encrypted EBS volumes |
+| 10 | `10-s3/public-access-block.png`, `public-access-refused.png` | Block Public Access on; a "make public" attempt refused |
+| 11 | `11-rds/rds-connectivity.png`, `connection-success-from-inside.png` | RDS not publicly accessible; success from inside (laptop timeout screenshot pending — see `docs/testing.md` Test 4) |
+| 12 | `12-alb/healthy-targets.png`, `unhealthy-target.png`, `stop.png`, `test-before-stop.png`, `test-after-stop.png` | Healthy/unhealthy targets; site staying up after stopping one server |
+| 13 | `13-cloudfront/cloudfront-https-works.png`, `alb-direct-403.png` | CloudFront over HTTPS vs. the ALB's 403 |
+| 14 | `14-cloudtrail/trail-settings.png`, `event-with-identity.png`, `describetrail.png` | Trail settings; an event showing identity/IP/time |
+| 15 | `15-flowlogs/reject-record.png` | A REJECT record from VPC Flow Logs |
+| 16 | `16-cloudwatch/dashboard.png`, `alarm-in-alarm-state.png`, `alert-email.png` | Dashboard; an alarm firing; the alert email |
+| 17 | `17-lambda/rule-added.png`, `rule-removed.png`, `lambda-logs.png` | Rule added, then auto-removed; Lambda execution log |
+| 18 | `18-peering/peering-route-1.png`, `peering-route-2.png`, `successful-curl.png`, `test.png` | Peering routes on both sides; successful curl across the peering connection |
+| 19 | `19-backup/vault-created.png`, `backup-plan.png`, `completed-job.png` | Vault, plan, and a completed backup job (governance-lock delete-refused screenshot pending — see `docs/testing.md` Test 10) |
+| 20 | `20-testing-destroy/ec2-empty.png`, `vpc-empty.png`, `rds-empty.png` | Empty console after `terraform destroy` |
 
 ## 9. Cost notes
 
@@ -96,11 +185,11 @@ at 90% stops the bleeding even if nobody reads the email in time — the same lo
 circuit breaker, applied to cost instead of amps.
 
 ### What was not free
-Per the project's cost table, three things in this platform are billed by the hour regardless of
-Free Tier: the **Application Load Balancer** (~$0.60/day), the **3 VPC interface endpoints**
-(~$0.65/day), and — while it existed — the **NAT Gateway was deliberately never created** at all
-(VPC endpoints replaced it entirely, at lower cost and without a route to the public internet).
-RDS, EFS, and EC2 usage stayed within Free Tier limits (`db.t3.micro`, `t3.micro`, low storage). The
+Per the project's cost table, two things in this platform are billed by the hour regardless of Free
+Tier: the **Application Load Balancer** (approximately $0.60/day) and the **3 VPC interface
+endpoints** (approximately $0.65/day). A NAT Gateway was never created — the VPC endpoints replace it
+entirely, at lower cost and without giving the private subnets a route to the public internet. RDS,
+EFS, and EC2 usage stayed within Free Tier limits (`db.t3.micro`, `t3.micro`, low storage). The
 platform was destroyed at the end of every work session per the project's own guidance
 ("run `terraform destroy` when you stop working") to avoid paying for idle infrastructure overnight.
 
@@ -152,10 +241,14 @@ Empty both S3 buckets (including old versions) first, or the destroy will fail.
 8. **Peering is not transitive, and it doesn't just "work."** The tools-vpc needed its own SSM
    endpoints and its own S3 gateway endpoint (peering doesn't share another VPC's endpoints), plus
    explicit Security Group and NACL rules on the app side scoped to the tools subnet specifically.
-9. **Not every AWS feature that sounds similar behaves the same way.** I assumed AWS Backup Vault
-   Lock had a permission-scoped "governance mode" like S3 Object Lock. It doesn't — every Backup
-   vault lock is compliance-style and becomes permanently unremovable once its grace period ends,
-   which changed a real decision about whether to use it in a lab account meant to be destroyed.
+9. **Reading AWS's own parameter semantics carefully matters more than pattern-matching to a
+   similar-sounding feature.** I initially assumed AWS Backup Vault Lock had no permission-scoped
+   "governance mode" like S3 Object Lock, because testing it with `changeable_for_days` set showed a
+   "Compliance lock in grace time" label — and wrongly generalized from that one configuration to
+   "the whole feature." The actual rule is precise: omitting `changeable_for_days` entirely gives true
+   governance mode (permanent, but bypassable by an authorized principal); setting it gives compliance
+   mode (temporarily editable, then permanently unremovable by anyone). The fix was one line removed,
+   not disabling the control.
 10. **Automated remediation is genuinely satisfying to see work.** Watching a manually-added
     `0.0.0.0/0:22` rule disappear on its own within about a minute — with no human involved — made the
     detection-vs-remediation distinction from the course material click in a way reading about it
@@ -173,20 +266,19 @@ Empty both S3 buckets (including old versions) first, or the destroy will fail.
   scan the QR code and enter two codes interactively). With more time, this would be enforced via an
   IAM policy that denies all actions except `iam:*MFADevice*` and `sts:GetSessionToken` until MFA is
   enabled, rather than left as an unenforced recommendation.
-- **AWS Backup Vault Lock is deliberately not enabled.** AWS Backup Vault Lock has no true
-  "governance mode" — every lock is compliance-style and becomes permanently unremovable (by anyone,
-  including AWS Support) once its short grace period ends. Locking the vault in this lab risked
-  leaving a real AWS resource impossible to clean up. The lock was applied briefly to confirm this
-  behavior firsthand, then removed while still inside its grace period. Full reasoning is in
-  `docs/security-controls.md`. In a real, ongoing production account (not a lab meant to be torn
-  down), this lock would be applied deliberately as a ransomware defense.
+- **AWS Backup Vault Lock is enabled in governance mode**, not compliance mode: `changeable_for_days`
+  is intentionally omitted from `aws_backup_vault_lock_configuration`, which is what selects
+  governance mode (permanent lock, but bypassable by a principal with
+  `backup:BypassGovernanceRetention`) rather than compliance mode (temporarily editable, then
+  permanently unremovable by anyone, including AWS Support). An earlier draft of this project
+  mistakenly disabled the lock entirely based on a misreading of this parameter — corrected in
+  `docs/security-controls.md`.
 - **RDS is single-AZ**, per the project's explicit Free Tier guidance — a production deployment would
   use Multi-AZ for automatic failover.
-- **The demo "app" is a static page served by Python's `http.server`, not nginx.** The AMI resolved
-  by the `most_recent` AMI filter has a broken `dnf` repo mirrorlist path (see "What I learned" #5),
-  and while that was worked around for installing the SSM Agent, the web server itself was switched
-  to Python to remove that fragile dependency from the critical path. Functionally it satisfies every
-  ALB/CloudFront health-check and routing requirement identically to nginx.
+- **The AMI resolved by the `most_recent` filter does not ship with the SSM Agent or a working `dnf`
+  repo mirrorlist out of the box.** Both were fixed in `user_data`: the SSM Agent is installed
+  directly from the regional S3 bucket, and `dnf` is pinned to a corrected (non-dualstack) mirror URL
+  so that `nginx` and `nfs-utils` install normally. See "What I learned" #4 and #5 for the full story.
 - **CloudFront was blocked for several hours by an AWS account-verification requirement** unrelated
   to this code (`AccessDenied: Your account must be verified before you can add new CloudFront
   resources`), resolved via an AWS Support case. This is an account-level restriction on new/Free

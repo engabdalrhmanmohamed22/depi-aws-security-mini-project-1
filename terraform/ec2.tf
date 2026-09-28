@@ -8,11 +8,10 @@
 # NOTE: the AMI resolved by the filter below does not ship with the SSM
 # Agent pre-installed, so user_data installs it directly from the regional
 # S3 bucket (standard, non-dualstack hostname — reachable via the S3
-# Gateway Endpoint from Task 7). The demo web server uses Python's built-in
-# http.server instead of nginx, since nginx would require dnf repo access
-# that times out from a private subnet with no NAT (the AL2023 repo
-# mirrorlist uses an S3 "dualstack" hostname the Gateway Endpoint does not
-# cover).
+# Gateway Endpoint from Task 7). nginx and nfs-utils are installed via a
+# dnf repo pinned to that same non-dualstack hostname (the AL2023 default
+# mirrorlist resolves to an S3 "dualstack" hostname the Gateway Endpoint
+# does not cover, which otherwise breaks dnf entirely from this subnet).
 
 # ---------------------------------------------------------------------------
 # Always use the latest Amazon Linux 2023 AMI — never hard-code an AMI ID.
@@ -80,32 +79,15 @@ resource "aws_instance" "app_a" {
     priority=1
     REPOEOF
 
-    dnf install -y --disablerepo="*" --enablerepo="amazonlinux-fixed" nfs-utils
+    dnf install -y --disablerepo="*" --enablerepo="amazonlinux-fixed" nfs-utils nginx
 
     mkdir -p /mnt/shared
     mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${aws_efs_file_system.app.dns_name}:/ /mnt/shared
     echo "${aws_efs_file_system.app.dns_name}:/ /mnt/shared nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,_netdev 0 0" >> /etc/fstab
 
-    mkdir -p /var/www
-    echo "<h1>Hello from us-east-1a (depi-sec-app-a)</h1>" > /var/www/index.html
-
-    cat <<'UNIT' > /etc/systemd/system/webserver.service
-    [Unit]
-    Description=Simple Python web server
-    After=network.target
-
-    [Service]
-    WorkingDirectory=/var/www
-    ExecStart=/usr/bin/python3 -m http.server 80
-    Restart=always
-
-    [Install]
-    WantedBy=multi-user.target
-    UNIT
-
-    systemctl daemon-reload
-    systemctl enable webserver
-    systemctl start webserver
+    echo "<h1>Hello from us-east-1a (depi-sec-app-a)</h1>" > /usr/share/nginx/html/index.html
+    systemctl enable nginx
+    systemctl start nginx
   EOF
 
   tags = {
@@ -161,32 +143,15 @@ resource "aws_instance" "app_b" {
     priority=1
     REPOEOF
 
-    dnf install -y --disablerepo="*" --enablerepo="amazonlinux-fixed" nfs-utils
+    dnf install -y --disablerepo="*" --enablerepo="amazonlinux-fixed" nfs-utils nginx
 
     mkdir -p /mnt/shared
     mount -t nfs4 -o nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2 ${aws_efs_file_system.app.dns_name}:/ /mnt/shared
     echo "${aws_efs_file_system.app.dns_name}:/ /mnt/shared nfs4 nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,_netdev 0 0" >> /etc/fstab
 
-    mkdir -p /var/www
-    echo "<h1>Hello from us-east-1b (depi-sec-app-b)</h1>" > /var/www/index.html
-
-    cat <<'UNIT' > /etc/systemd/system/webserver.service
-    [Unit]
-    Description=Simple Python web server
-    After=network.target
-
-    [Service]
-    WorkingDirectory=/var/www
-    ExecStart=/usr/bin/python3 -m http.server 80
-    Restart=always
-
-    [Install]
-    WantedBy=multi-user.target
-    UNIT
-
-    systemctl daemon-reload
-    systemctl enable webserver
-    systemctl start webserver
+    echo "<h1>Hello from us-east-1b (depi-sec-app-b)</h1>" > /usr/share/nginx/html/index.html
+    systemctl enable nginx
+    systemctl start nginx
   EOF
 
   tags = {

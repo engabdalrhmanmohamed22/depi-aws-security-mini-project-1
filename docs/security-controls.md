@@ -9,7 +9,7 @@ One row per control, covering every task in the project.
 | 4 | Public/private subnet split via route tables | VPC | Servers being reachable from the internet by default | `screenshots/04-vpc/04-a-public-route-table.png`, `04-b-private-route-table.png`, `04-c-resource-map.png` |
 | 5 | Tiered Security Groups (chain below) | EC2 Security Groups | Direct internet access to app servers, database, and file system | `screenshots/05-sg/05-a-alb-sg-inbound.png` … `05-d-efs-sg-inbound.png` |
 | 6 | Network ACLs (stateless subnet-level backstop) | VPC NACL | Port 22 reachable even if a Security Group were ever misconfigured | `screenshots/06-nacl/06-a-nacl-inbound-rules.png`, `06-b-nacl-outbound-rules.png` |
-| 7 | VPC Endpoints (S3 gateway + SSM/SSMMESSAGES/EC2MESSAGES interface) | VPC PrivateLink | Needing a NAT Gateway or public IP just to reach AWS services | `screenshots/07-endpoints/07-a-endpoints-list.png`, `07-b-private-route-table-updated.png` |
+| 7 | VPC Endpoints (S3 gateway + SSM/SSMMESSAGES/EC2MESSAGES interface, no NAT Gateway) | VPC PrivateLink | Needing a NAT Gateway or public IP just to reach AWS services | `screenshots/07-endpoints/07-a-endpoints-list.png`, `07-b-private-route-table-updated.png` |
 | 8 | EC2 with no key pair, no public IP, SSM-only access | EC2 + Systems Manager | Standing SSH access / a leaked key granting a shell | `screenshots/08-ec2-ssm/08-a-session-manager-shell.png`, `08-b-no-public-ip.png` |
 | 9 | EBS + EFS encryption at rest | KMS (AWS-managed) | Data readable if the underlying disk were ever exposed | `screenshots/09-efs/09-a-efs-shared-file.png`, `09-b-encrypted-volumes.png` |
 | 10 | S3 Public Access Block, versioning, encryption, HTTPS-only policy | S3 | A bucket or object ever becoming reachable from the internet | `screenshots/10-s3/10-a-public-access-block.png`, `10-b-public-access-refused.png` |
@@ -21,7 +21,7 @@ One row per control, covering every task in the project.
 | 16 | CloudWatch alarms (CPU, ALB health, RDS storage, failed logins) + dashboard | CloudWatch + SNS | Problems or brute-force attempts going unnoticed until too late | `screenshots/16-cloudwatch/16-a-dashboard.png`, `16-b-alarm-in-alarm-state.png`, `16-c-alert-email.png` |
 | 17 | Lambda auto-remediation of open SSH/RDP rules | Lambda + EventBridge | A dangerous rule staying open for minutes/hours until a human reacts | `screenshots/17-lambda/17-a-rule-added.png`, `17-b-rule-removed.png`, `17-c-lambda-logs.png` |
 | 18 | VPC peering with least-privilege rules for the monitoring subnet only | VPC Peering | A second trust boundary (ops/monitoring) needing full network access to reach the app | `screenshots/18-peering/18-a-peering-routes.png`, `18-b-successful-curl.png` |
-| 19 | Daily AWS Backup plan, tag-based selection | AWS Backup | Data loss with no recent recovery point | `screenshots/19-backup/19-a-vault-created.png`, `19-b-backup-plan.png`, `19-c-completed-job.png` |
+| 19 | Daily AWS Backup plan, tag-based selection, Vault Lock (governance mode) | AWS Backup | Data loss with no recent recovery point; an attacker or insider deleting backups before encrypting/destroying data | `screenshots/19-backup/19-a-locked-vault.png`, `19-b-backup-plan.png`, `19-c-completed-job.png`, `19-d-delete-refused.png` |
 
 ## Security Group chain (Task 5)
 
@@ -118,24 +118,24 @@ The filter pattern used to find rejected SSH attempts:
 
 
 
-## AWS Backup Vault Lock (Task 19) — decision: NOT enabled, and why
+## AWS Backup Vault Lock (Task 19) — governance mode, corrected
 
-AWS Backup Vault Lock does **not** have a persistent "governance mode" the way S3 Object Lock does.
-Every vault lock is inherently a compliance-style lock: AWS gives an editable grace period
-(`changeable_for_days`, capped at 3 days) during which the lock can still be removed, but once that
-window closes the lock becomes **permanent — unremovable by anyone, including the root user and AWS
-Support** — for the entire retention period (up to 365 days here).
+**Correction to an earlier version of this document:** an earlier draft claimed AWS Backup Vault Lock
+has no true governance mode and left the lock disabled entirely. That was wrong. The mode is
+controlled by a single argument on `aws_backup_vault_lock_configuration`:
 
-This was confirmed hands-on: enabling the lock in this lab showed the console label
-**"Compliance lock in grace time"**, not "Governance." Since the project brief explicitly warns
-against ever using compliance mode in a learning account ("Compliance mode cannot be removed by
-anybody, including AWS Support, until the lock expires"), and Backup Vault Lock offers no other mode,
-**the lock configuration was deliberately removed while still inside its 3-day grace period**, before
-it could become permanent. The vault, the daily backup plan (30-day retention), and the tag-based
-selection are all still in place and satisfy the rest of Task 19 — only the irreversible lock itself
-was left out, as a documented, deliberate risk decision rather than an oversight.
+| `changeable_for_days` | Resulting mode | Who can remove it |
+|---|---|---|
+| Set (e.g. `3`) | Compliance | Nobody, once the grace period elapses — not even the root user or AWS Support |
+| Omitted entirely | **Governance** | A principal with the `backup:BypassGovernanceRetention` permission, at any time |
 
-**In a real production environment** (not a lab meant to be destroyed), this lock would typically be
-enabled deliberately as a ransomware defense, accepting the permanence as the whole point of the
-control — that trade-off only makes sense once the retention policy has been reviewed and approved by
-someone accountable for it, which is not the case for a mini-project meant to be torn down.
+The fix was simply to **omit `changeable_for_days`** rather than disable the lock altogether. The
+vault is locked in governance mode with `min_retention_days = 7` and `max_retention_days = 365`,
+exactly as the project brief asks for. This still blocks an ordinary user from deleting a recovery
+point early (Task 20, Test 10 confirms this with an Access Denied response), while an account admin
+retains the bypass permission needed to clean up the lab with `terraform destroy`.
+
+**Why the earlier mistake happened:** testing the lock *with* `changeable_for_days` set (to observe
+the behavior firsthand) showed the console label "Compliance lock in grace time," which was
+misread as "Backup Vault Lock is always compliance-mode." The real cause was including that argument
+at all — removing it, not removing the whole lock, was the correct fix.
