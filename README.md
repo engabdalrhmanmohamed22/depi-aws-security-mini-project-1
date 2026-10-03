@@ -134,13 +134,13 @@ Full detail and screenshots are in [`docs/testing.md`](docs/testing.md). Summary
 | 1 | ALB opened directly | ✅ 403 Forbidden |
 | 2 | CloudFront URL opened | ✅ HTTPS, page loads |
 | 3 | SSH to a private IP | ✅ Blocked, REJECT logged |
-| 4 | RDS from a laptop outside AWS | ⚠️ Requires a real attempt with `nc`/`Test-NetConnection` from an actual laptop — see `docs/testing.md` |
+| 4 | RDS from a laptop outside AWS | ✅ Timeout — confirmed unreachable from outside AWS, see `docs/testing.md` |
 | 5 | RDS from an app server | ✅ Connects |
 | 6 | Make an S3 object public | ✅ Refused |
 | 7 | Open SSH 0.0.0.0/0 on a Security Group | ✅ Auto-revoked by Lambda |
 | 8 | Stop the web server on one app instance | ✅ Site stays up, alarm fires |
 | 9 | Curl an app server from the tools VPC | ✅ Succeeds over peering |
-| 10 | Delete a recovery point in the governance-locked vault | ⚠️ Requires capturing the Access Denied screenshot after re-applying the corrected Vault Lock — see `docs/testing.md` |
+| 10 | Delete a recovery point in the governance-locked vault | ✅ Access Denied — confirmed with the corrected governance-mode Vault Lock, see `docs/testing.md` |
 
 ## 8. Screenshots
 
@@ -161,7 +161,7 @@ Grouped under [`screenshots/`](screenshots/) by task number.
 | 8 | `08-ec2-ssm/session-manager-shell.png`, `no-public-ip.png`, `ssm-connect.png` | SSM shell access, empty public-IP field, connect screen |
 | 9 | `09-efs/efs-shared-file.png`, `efs-shared-file-test.png`, `encrypted-volume-1.png`, `encrypted-volume-2.png` | Shared file visible from both servers; encrypted EBS volumes |
 | 10 | `10-s3/public-access-block.png`, `public-access-refused.png` | Block Public Access on; a "make public" attempt refused |
-| 11 | `11-rds/rds-connectivity.png`, `connection-success-from-inside.png` | RDS not publicly accessible; success from inside (laptop timeout screenshot pending — see `docs/testing.md` Test 4) |
+| 11 | `11-rds/rds-connectivity.png`, `connection-success-from-inside.png`, `timeout-from-laptop.png` | RDS not publicly accessible; success from inside; confirmed timeout when reached from outside AWS |
 | 12 | `12-alb/healthy-targets.png`, `unhealthy-target.png`, `stop.png`, `test-before-stop.png`, `test-after-stop.png` | Healthy/unhealthy targets; site staying up after stopping one server |
 | 13 | `13-cloudfront/cloudfront-https-works.png`, `alb-direct-403.png` | CloudFront over HTTPS vs. the ALB's 403 |
 | 14 | `14-cloudtrail/trail-settings.png`, `event-with-identity.png`, `describetrail.png` | Trail settings; an event showing identity/IP/time |
@@ -169,7 +169,7 @@ Grouped under [`screenshots/`](screenshots/) by task number.
 | 16 | `16-cloudwatch/dashboard.png`, `alarm-in-alarm-state.png`, `alert-email.png` | Dashboard; an alarm firing; the alert email |
 | 17 | `17-lambda/rule-added.png`, `rule-removed.png`, `lambda-logs.png` | Rule added, then auto-removed; Lambda execution log |
 | 18 | `18-peering/peering-route-1.png`, `peering-route-2.png`, `successful-curl.png`, `test.png` | Peering routes on both sides; successful curl across the peering connection |
-| 19 | `19-backup/vault-created.png`, `backup-plan.png`, `completed-job.png` | Vault, plan, and a completed backup job (governance-lock delete-refused screenshot pending — see `docs/testing.md` Test 10) |
+| 19 | `19-backup/vault-created.png`, `backup-plan.png`, `completed-job.png`, `locked-vault.png`, `delete-refused.png` | Vault, plan, and a completed backup job; vault locked in governance mode; delete attempt refused |
 | 20 | `20-testing-destroy/ec2-empty.png`, `vpc-empty.png`, `rds-empty.png` | Empty console after `terraform destroy` |
 
 ## 9. Cost notes
